@@ -86,7 +86,9 @@ using namespace android;
 #define BITRATE (8*1000*1000)
 #define WIDTH 1280
 #define HEIGHT 720
-#define MAX_IMAGES 4
+#define RECORDING_WIDTH 1280
+#define RECORDING_HEIGHT 720
+#define MAX_IMAGES 8
 #define ALIGN(x, mask) ( ((x) + (mask) - 1) & ~((mask) - 1) )
 
 //Service listener implementation
@@ -100,14 +102,14 @@ public:
     virtual ~CameraServiceListener() {};
 
     virtual void onStatusChanged(Status status, int32_t cameraId) {
-		ALOGD("%s: onStatusChanged: %d", __FUNCTION__, status);
+		ALOGV("%s: onStatusChanged: %d", __FUNCTION__, status);
         Mutex::Autolock l(mLock);
         mCameraStatuses[cameraId] = status;
         mCondition.broadcast();
     };
 
     virtual void onTorchStatusChanged(TorchStatus status, const String16& cameraId) {
-		ALOGD("%s: onTorchStatusChanged: %s", __FUNCTION__, status);
+		ALOGV("%s: onTorchStatusChanged: %s", __FUNCTION__, status);
         Mutex::Autolock l(mLock);
         mCameraTorchStatuses[cameraId] = status;
         mTorchCondition.broadcast();
@@ -201,7 +203,7 @@ public:
     }
 
     virtual void onDeviceIdle() {
-		ALOGD("%s: onDeviceIdle", __FUNCTION__);
+		ALOGV("%s: onDeviceIdle", __FUNCTION__);
         Mutex::Autolock l(mLock);
         mLastStatus = IDLE;
         mStatusesHit.push_back(mLastStatus);
@@ -210,7 +212,7 @@ public:
 
     virtual void onCaptureStarted(const CaptureResultExtras& resultExtras,
             int64_t timestamp) {
-		ALOGD("%s: onCaptureStarted", __FUNCTION__);
+		ALOGV("%s: onCaptureStarted", __FUNCTION__);
         Mutex::Autolock l(mLock);
         mLastStatus = RUNNING;
         mStatusesHit.push_back(mLastStatus);
@@ -220,7 +222,7 @@ public:
 
     virtual void onResultReceived(const CameraMetadata& metadata,
             const CaptureResultExtras& resultExtras) {
-		ALOGD("%s: onResultReceived", __FUNCTION__);
+		ALOGV("%s: onResultReceived", __FUNCTION__);
         Mutex::Autolock l(mLock);
         mLastStatus = SENT_RESULT;
         mStatusesHit.push_back(mLastStatus);
@@ -228,7 +230,7 @@ public:
     }
 
     virtual void onPrepared(int streamId) {
-		ALOGD("%s: onPrepared, streamId: %d", __FUNCTION__, streamId);
+		ALOGV("%s: onPrepared, streamId: %d", __FUNCTION__, streamId);
         Mutex::Autolock l(mLock);
         mLastStatus = PREPARED;
         mStatusesHit.push_back(mLastStatus);
@@ -290,7 +292,7 @@ void CodecHandler::onMessageReceived(const sp<AMessage> &msg) {
 	switch (msg->what()) {
 		case kWhatCallbackNotify:
 		{
-			ALOGD("onMessageReceived::kWhatCallbackNotify");
+			ALOGV("onMessageReceived::kWhatCallbackNotify");
 			handleCallback(msg);
 			break;
 		}
@@ -301,18 +303,18 @@ void CodecHandler::onMessageReceived(const sp<AMessage> &msg) {
 
 void CodecHandler::handleCallback(const sp<AMessage> &msg) {
 	int32_t arg1, arg2 = 0;
-	ALOGD("handleCallback");
+	ALOGV("handleCallback");
 	CHECK(msg->findInt32("callbackID", &arg1));
 	switch (arg1) {
 		case MediaCodec::CB_INPUT_AVAILABLE:
 		{
-			ALOGD("handleCallback::CB_INPUT_AVAILABLE");
+			ALOGV("handleCallback::CB_INPUT_AVAILABLE");
 			CHECK(msg->findInt32("index", &arg2));
 			break;
 		}
 		case MediaCodec::CB_OUTPUT_AVAILABLE:
 		{
-			ALOGD("handleCallback::CB_OUTPUT_AVAILABLE");
+			ALOGV("handleCallback::CB_OUTPUT_AVAILABLE");
 
 			int32_t index;
 			size_t size, offset;
@@ -324,7 +326,7 @@ void CodecHandler::handleCallback(const sp<AMessage> &msg) {
 			CHECK(msg->findInt64("timeUs", &timeUs));
 			CHECK(msg->findInt32("flags", (int32_t *)&flags));
 
-			ALOGD("handleCallback::CB_OUTPUT_AVAILABLE::index[%d], size[%ld], offset[%ld]", index, size, offset);
+			ALOGV("handleCallback::CB_OUTPUT_AVAILABLE::index[%d], size[%ld], offset[%ld]", index, size, offset);
 
 			sp<ABuffer> mEncoderOutputBuffers;
 			status_t err = mCodec->getOutputBuffer(index, &mEncoderOutputBuffers);
@@ -336,18 +338,6 @@ void CodecHandler::handleCallback(const sp<AMessage> &msg) {
 			ALOGD("handleCallback::CB_OUTPUT_AVAILABLE::capacity[%ld], rangeOffset[%ld], rangeLength[%ld]", mEncoderOutputBuffers->capacity(), mEncoderOutputBuffers->offset(), mEncoderOutputBuffers->size());
 			MediaBuffer *mbuf = new MediaBuffer(mEncoderOutputBuffers->size());
 			memcpy(mbuf->data(), mEncoderOutputBuffers->data(), mEncoderOutputBuffers->size());
-
-			if (flags & MediaCodec::BUFFER_FLAG_CODECCONFIG) {
-				mbuf->meta_data()->setInt32(kKeyIsCodecConfig, true);
-			}
-			if (flags & MediaCodec::BUFFER_FLAG_SYNCFRAME) {
-				mbuf->meta_data()->setInt32(kKeyIsSyncFrame, true);
-			}
-#ifdef MTK_AOSP_ENHANCEMENT
-            if (flags & MediaCodec::BUFFER_FLAG_MULTISLICE) {
-                mbuf->meta_data()->setInt32(KKeyMultiSliceBS, true);
-            }
-#endif
 */			
 			err = mCodec->releaseOutputBuffer(index);
 			if (err != OK) {
@@ -370,7 +360,7 @@ void CodecHandler::handleCallback(const sp<AMessage> &msg) {
 		}
 		case MediaCodec::CB_ERROR:
 		{
-			ALOGD("handleCallback::CB_ERROR");
+			ALOGE("handleCallback::CB_ERROR");
 			int32_t err, actionCode;
 			CHECK(msg->findInt32("err", &err));
 			CHECK(msg->findInt32("actionCode", &actionCode));
@@ -424,11 +414,6 @@ private:
 	status_t mInitStatus;
 
 	DISALLOW_EVIL_CONSTRUCTORS(TMediaCodec);
-};
-
-enum {
-	EVENT_CALLBACK = 1,
-	EVENT_SET_CALLBACK = 2,
 };
 
 TMediaCodec::TMediaCodec (const char *name, bool nameIsType, bool encoder) {
@@ -558,7 +543,7 @@ struct FrameListener : public ConsumerBase::FrameAvailableListener {
 
 	// CpuConsumer::FrameAvailableListener implementation
 	virtual void onFrameAvailable(const BufferItem& /* item */) {
-		ALOGD("Frame now available (start)");
+		ALOGV("Frame now available (start)");
 
 		Mutex::Autolock lock(mMutex);
 		
@@ -566,7 +551,7 @@ struct FrameListener : public ConsumerBase::FrameAvailableListener {
 		if (buffer == NULL) {
 			return;
 		}
-		ALOGD("start lock buffer");
+		ALOGV("start lock buffer");
 		status_t res = mConsumer->lockNextBuffer(buffer);
 		
 		// print buffer info
@@ -579,14 +564,14 @@ struct FrameListener : public ConsumerBase::FrameAvailableListener {
 		String8 dumpName = String8::format("/data/local/tmp/camera2_test_variable_frame_%ld.yuv", buffer->frameNumber);
 		DumpYuvToFile(dumpName, *buffer);
 */
-		ALOGD("start unlock buffer");
+		ALOGV("start unlock buffer");
 		mConsumer->unlockBuffer(*buffer);
 		returnLockedBuffer(buffer);
 		
 		mPendingFrames++;
 		mCondition.signal();
 
-		ALOGD("Frame now available (end)");
+		ALOGV("Frame now available (end)");
 	}   
 
 	status_t waitForFrame(nsecs_t timeout) {
@@ -621,9 +606,9 @@ struct FrameListener : public ConsumerBase::FrameAvailableListener {
 			return;
 		}
 
-		ALOGD("print buffer info (start)");
+		ALOGV("print buffer info (start)");
 		ALOGD("width:%d, height:%d, format:0x%x, stride:%d, frameNumber:%d, flexFormat:0x%x", buffer->width, buffer->height, buffer->format, buffer->stride, buffer->frameNumber, buffer->flexFormat);
-		ALOGD("print buffer info (end)");
+		ALOGV("print buffer info (end)");
 	}
 	void DumpYuvToFile(const String8 &fileName, const CpuConsumer::LockedBuffer &img) {
 		uint8_t *dataCb, *dataCr;
@@ -766,7 +751,7 @@ int main(int argc, char **argv) {
 		mediarecorder->setParameters(String8("video-param-encoding-bitrate=8000000"));	// bitrate 8M
 		mediarecorder->setVideoFrameRate(30);
 		/* config recording stream size here */
-		mediarecorder->setVideoSize(WIDTH, HEIGHT);
+		mediarecorder->setVideoSize(RECORDING_WIDTH, RECORDING_HEIGHT);
 		mediarecorder->setVideoEncoder(VIDEO_ENCODER_H264);
 		mediarecorder->setAudioEncoder(AUDIO_ENCODER_AAC);
 		if (OK != mediarecorder->prepare()) {
@@ -862,8 +847,12 @@ int main(int argc, char **argv) {
 		encoder->start();
 
 		ALOGE("Stage 13");
-		while(1);
+		//while(1);
+		sleep(5);
 		ALOGE("Stage 14");
+
+		encoder->stop();
+		encoder->reset();
 
 		/* stop and release recording */
 		mediarecorder->stop();

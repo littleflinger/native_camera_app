@@ -503,7 +503,8 @@ int main(int argc, char **argv) {
 		//callbacks->waitForIdle();
 
 		ALOGE("Stage 7");
-		while(1);
+		//while(1);
+		sleep(5);
 		ALOGE("Stage 8");
 
 		if (OK != device->cancelRequest(requestId, /*out*/&lastFrameNumber)) {
